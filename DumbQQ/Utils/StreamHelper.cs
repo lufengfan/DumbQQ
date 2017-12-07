@@ -8,7 +8,15 @@ namespace DumbQQ.Utils
         {
             using (var ms = new MemoryStream())
             {
-                stream.CopyTo(ms);
+                const int bufferSize = 81920;
+                byte[] array = new byte[bufferSize];
+                int count;
+                while ((count = stream.Read(array, 0, array.Length)) != 0)
+                {
+                    ms.Write(array, 0, count);
+                }
+                array = null;
+
                 stream.Close();
                 return ms.ToArray();
             }

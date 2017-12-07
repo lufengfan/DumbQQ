@@ -2,19 +2,16 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using System.Net.Http;
 using System.Reflection;
 using System.Threading;
 using DumbQQ.Constants;
 using DumbQQ.Models;
 using DumbQQ.Utils;
-using EasyHttp.Http;
-using EasyHttp.Infrastructure;
 using log4net;
 using log4net.Config;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using HttpClient = EasyHttp.Http.HttpClient;
+using System.Web;
 
 namespace DumbQQ.Client
 {
@@ -123,11 +120,18 @@ namespace DumbQQ.Client
         public DumbQQClient()
         {
             XmlConfigurator.Configure();
-            Client.Request.UserAgent = ApiUrl.UserAgent;
-            Client.Request.PersistCookies = true;
-            Client.Request.KeepAlive = true;
-            Client.Request.Accept = null;
-            Client.ThrowExceptionOnHttpError = false;
+            try
+            {
+                Client.UserAgent = ApiUrl.UserAgent;
+                Client.PersistCookies = true;
+                Client.KeepAlive = true;
+                Client.Accept = null;
+                Client.ThrowExceptionOnHttpError = false;
+            }
+            catch (Exception e)
+            {
+                
+            }
             _cache = new CacheDepot(CacheTimeout);
             _myInfoCache = new Cache<FriendInfo>(CacheTimeout);
             _qqNumberCache = new CacheDictionary<long, long>(CacheTimeout);
@@ -295,7 +299,7 @@ namespace DumbQQ.Client
         ///     当需要在浏览器中手动登录时被引发。参数为登录网址。
         /// </summary>
         [Obsolete]
-        public event EventHandler<string> ExtraLoginNeeded;
+        public event EventHandler<DataEventArgs<string>> ExtraLoginNeeded;
 
         /// <summary>
         ///     当掉线时被引发。
@@ -305,17 +309,17 @@ namespace DumbQQ.Client
         /// <summary>
         ///     接收到好友消息时被引发。
         /// </summary>
-        public event EventHandler<FriendMessage> FriendMessageReceived;
+        public event EventHandler<DataEventArgs<FriendMessage>> FriendMessageReceived;
 
         /// <summary>
         ///     接收到群消息时被引发。
         /// </summary>
-        public event EventHandler<GroupMessage> GroupMessageReceived;
+        public event EventHandler<DataEventArgs<GroupMessage>> GroupMessageReceived;
 
         /// <summary>
         ///     接收到讨论组消息时被引发。
         /// </summary>
-        public event EventHandler<DiscussionMessage> DiscussionMessageReceived;
+        public event EventHandler<DataEventArgs<DiscussionMessage>> DiscussionMessageReceived;
 
         /// <summary>
         ///     发出消息时被引发。适合用于在控制台打印发送消息的回显。
@@ -384,7 +388,7 @@ namespace DumbQQ.Client
 
             var qq =
             ((JObject)
-                JObject.Parse(Client.Get(ApiUrl.GetQQById, userId, Vfwebqq, RandomHelper.GetRandomDouble()).RawText)[
+                JObject.Parse(((HttpWebResponseProxy)Client.Get(ApiUrl.GetQQById, userId, Vfwebqq, RandomHelper.GetRandomDouble())).RawText)[
                     "result"])["account"].Value<long>();
             _qqNumberCache.Put(userId, qq);
             return qq;
@@ -444,7 +448,7 @@ namespace DumbQQ.Client
             if (response.StatusCode != HttpStatusCode.OK)
                 Logger.Error("消息发送失败，HTTP返回码" + (int) response.StatusCode);
 
-            var status = JObject.Parse(response.RawText)["errCode"].ToObject<int?>();
+            var status = JObject.Parse(((HttpWebResponseProxy)response).RawText)["errCode"].ToObject<int?>();
             if (status != null && (status == 0 || status == 100100))
             {
                 Logger.Debug("消息发送成功");
@@ -486,10 +490,7 @@ namespace DumbQQ.Client
         {
             if (Status != ClientStatus.Active)
                 throw new InvalidOperationException("仅在登录后才能导出cookie");
-            var cookieContainer = Client.Request.GetType()
-                .GetField(@"cookieContainer", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (cookieContainer == null)
-                throw new NotImplementedException("无法读取Cookie，可能是因为EasyHttp更改了HttpRequest类的内部结构；请Issue汇报该问题。");
+            
             return new JObject
             {
                 {"hash", Hash},
@@ -499,7 +500,7 @@ namespace DumbQQ.Client
                 {"vfwebqq", Vfwebqq},
                 {
                     "cookies",
-                    JArray.FromObject(((CookieContainer) cookieContainer.GetValue(Client.Request)).GetAllCookies())
+                    JArray.FromObject(Client.Request.CookieContainer.GetAllCookies())
                 }
             }.ToString(Formatting.None);
         }
@@ -513,12 +514,7 @@ namespace DumbQQ.Client
             if (Status != ClientStatus.Idle)
                 throw new InvalidOperationException("已在登录或者已经登录，不能重复进行登录操作");
 
-
-            var cookieContainerField = Client.Request.GetType()
-                .GetField(@"cookieContainer", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (cookieContainerField == null)
-                throw new NotImplementedException("无法写入Cookie，可能是因为EasyHttp更改了HttpRequest类的内部结构；请Issue汇报该问题。");
-            var originalCookieContainer = cookieContainerField.GetValue(Client.Request);
+            var originalCookieContainer = Client.Request.CookieContainer;
 
             try
             {
@@ -533,7 +529,7 @@ namespace DumbQQ.Client
                 var cookies = new CookieContainer();
                 foreach (var cookie in dump["cookies"].Value<JArray>().ToObject<List<Cookie>>())
                     cookies.Add(cookie);
-                cookieContainerField.SetValue(Client.Request, cookies);
+                Client.Request.CookieContainer = cookies;
 
                 if (TestLogin())
                 {
@@ -542,13 +538,13 @@ namespace DumbQQ.Client
                     return LoginResult.Succeeded;
                 }
                 Status = ClientStatus.Idle;
-                cookieContainerField.SetValue(Client.Request, originalCookieContainer);
+                Client.Request.CookieContainer = originalCookieContainer;
                 return LoginResult.CookieExpired;
             }
             catch (Exception ex)
             {
                 Status = ClientStatus.Idle;
-                cookieContainerField.SetValue(Client.Request, originalCookieContainer);
+                Client.Request.CookieContainer = originalCookieContainer;
                 Logger.Error("登录失败，抛出异常：" + ex);
                 return LoginResult.Failed;
             }
@@ -620,7 +616,7 @@ namespace DumbQQ.Client
             Logger.Debug("开始获取二维码");
 
             Client.StreamResponse = true;
-            var response = Client.Get(ApiUrl.GetQrCode.Url);
+            var response = Client.Get(ApiUrl.GetQrCode);
             foreach (Cookie cookie in response.Cookies)
             {
                 if (cookie.Name != "qrsig") continue;
@@ -630,7 +626,7 @@ namespace DumbQQ.Client
             Client.StreamResponse = false;
             Logger.Info("二维码已获取");
 
-            qrCodeDownloadedCallback.Invoke(response.ResponseStream.ToBytes());
+            qrCodeDownloadedCallback.Invoke(response.GetResponseStream().ToBytes());
         }
 
         private static int Hash33(string s)
@@ -650,8 +646,8 @@ namespace DumbQQ.Client
             while (true)
             {
                 Thread.Sleep(1000);
-                var response = Client.Get(ApiUrl.VerifyQrCode, Hash33(_qrsig));
-                var result = response.RawText;
+                var response = Client.Get(ApiUrl.VerifyQrCode.Url, Hash33(_qrsig));
+                var result = ((HttpWebResponseProxy)response).RawText;
                 if (result.Contains("成功"))
                 {
                     var cookie = response.Cookies["ptwebqq"];
@@ -714,7 +710,7 @@ namespace DumbQQ.Client
 
             var result = Client.Get(ApiUrl.TestLogin, Vfwebqq, ClientId, Psessionid, RandomHelper.GetRandomDouble());
             return result.StatusCode == HttpStatusCode.OK &&
-                   JObject.Parse(result.RawText)["retcode"].Value<int?>() == 0;
+                   JObject.Parse(((HttpWebResponseProxy)result).RawText)["retcode"].Value<int?>() == 0;
         }
 
         // 开始消息轮询
@@ -735,8 +731,8 @@ namespace DumbQQ.Client
                     }
                     catch (Exception ex)
                     {
-                        if (!(ex is HttpRequestException) || !(ex.InnerException is HttpException) ||
-                            ((HttpException) ex.InnerException).StatusCode != HttpStatusCode.GatewayTimeout)
+                        if (!(ex is HttpException) || !(ex.InnerException is HttpException) ||
+                            (HttpStatusCode)((HttpException) ex.InnerException).GetHttpCode() != HttpStatusCode.GatewayTimeout)
                             Logger.Error(ex);
                         // 自动掉线
                         if (TestLogin()) continue;
@@ -804,24 +800,25 @@ namespace DumbQQ.Client
             _qqNumberCache.Clear();
         }
 
-        internal JObject GetResponseJson(HttpResponse response)
+        internal JObject GetResponseJson(HttpWebResponse response)
         {
             if (response.StatusCode != HttpStatusCode.OK)
-                throw new HttpRequestException("请求失败，Http返回码" + (int) response.StatusCode + "(" + response.StatusCode +
-                                               ")", new HttpException(HttpStatusCode.GatewayTimeout, "Gateway Timeout"));
-            var json = JObject.Parse(response.RawText);
+                throw new HttpException(
+                    $"请求失败，Http返回码{response.StatusCode}(\"{response.StatusDescription}\")",
+                    new HttpException((int)HttpStatusCode.GatewayTimeout, "Gateway Timeout"));
+            var json = JObject.Parse(((HttpWebResponseProxy)response).RawText);
             var retCode = json["retcode"].Value<int?>();
             switch (retCode)
             {
                 case 0:
                     return json;
                 case null:
-                    throw new HttpRequestException("请求失败，API未返回状态码");
+                    throw new HttpException("请求失败，API未返回状态码");
                 case 103:
                     Logger.Error("请求失败，API返回码103；可能需要进一步登录。");
                     break;
                 default:
-                    throw new HttpRequestException("请求失败，API返回码" + retCode, new ApiException((int) retCode));
+                    throw new HttpException("请求失败，API返回码" + retCode, new ApiException((int) retCode));
             }
             return json;
         }
@@ -892,7 +889,7 @@ namespace DumbQQ.Client
         protected Cache(TimeSpan timeout)
         {
             Timeout = timeout;
-            Timer = new Timer(_ => Clear(), null, Timeout, System.Threading.Timeout.InfiniteTimeSpan);
+            Timer = new Timer(_ => Clear(), null, Timeout, new TimeSpan(0, 0, 0, 0, System.Threading.Timeout.Infinite));
         }
 
         public TimeSpan Timeout { get; set; }
@@ -918,7 +915,7 @@ namespace DumbQQ.Client
         {
             Value = target;
             IsValid = true;
-            Timer.Change(Timeout, System.Threading.Timeout.InfiniteTimeSpan);
+            Timer.Change(Timeout, new TimeSpan(0, 0, 0, 0, System.Threading.Timeout.Infinite));
         }
 
         public void Clear()
@@ -961,7 +958,7 @@ namespace DumbQQ.Client
         {
             Value = target;
             IsValid = true;
-            Timer.Change(Timeout, System.Threading.Timeout.InfiniteTimeSpan);
+            Timer.Change(Timeout, new TimeSpan(0, 0, 0, 0, System.Threading.Timeout.Infinite));
         }
     }
 

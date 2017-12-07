@@ -1,3 +1,8 @@
+本项目 Fork [@TJYSunset](https://github.com/scienjus/)的[DumbSmartQQ](https://github.com/TJYSunset/DumbQQ) 。
+并降低 .Net Framework 依赖至3.5。
+
+——————————————————————————————————
+
 # DumbQQ [![Build status]( 	https://img.shields.io/appveyor/ci/TJYSunset/DumbQQ.svg?style=flat)](https://ci.appveyor.com/project/TJYSunset/DumbQQ) [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](https://raw.githubusercontent.com/TJYSunset/DumbQQ/master/LICENSE) [![NuGet]( 	https://img.shields.io/nuget/v/Sunsetware.DumbQQ.svg)](https://www.nuget.org/packages/Sunsetware.DumbQQ/)
 
 本项目是对[@ScienJus](https://github.com/scienjus/)的[SmartQQ](https://github.com/scienjus/smartqq)的C#迁移（以及更多）。感谢对原项目做出贡献的各位的付出。

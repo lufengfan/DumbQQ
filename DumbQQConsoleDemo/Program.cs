@@ -3,36 +3,41 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using DumbQQ.Client;
+using DumbQQ.Models;
+using System.Drawing;
 
 namespace DumbQQConsoleDemo
 {
-    public class Program
+    public static class Program
     {
         private const string CookiePath = "dump.json";
-        private static readonly DumbQQClient Client = new DumbQQClient {CacheTimeout = TimeSpan.FromDays(1)};
+        private static readonly DumbQQClient Client = new DumbQQClient() { CacheTimeout = TimeSpan.FromDays(1) };
 
         public static void Main(string[] args)
         {
             // 好友消息回调
             Client.FriendMessageReceived +=
-                (sender, message) =>
+                (sender, e) =>
                 {
+                    FriendMessage message = e;
                     Console.WriteLine($"{message.Sender.Alias ?? message.Sender.Nickname}:{message.Content}");
                 };
             // 群消息回调
-            Client.GroupMessageReceived += (sender, message) =>
+            Client.GroupMessageReceived += (sender, e) =>
             {
+                GroupMessage message = e;
                 Console.WriteLine(
                     $"[{message.Group.Name}]{message.Sender.Alias ?? message.Sender.Nickname}:{message.Content}");
-                if (message.Content.IsMatch(@"^\s*Knock knock\s*$"))
+                if (Regex.IsMatch(@"^\s*Knock knock\s*$", message.Content))
                     message.Reply("Who's there?");
                 else if (message.StrictlyMentionedMe)
                     message.Reply("什么事？");
             };
             // 讨论组消息回调
             Client.DiscussionMessageReceived +=
-                (sender, message) =>
+                (sender, e) =>
                 {
+                    DiscussionMessage message = e;
                     Console.WriteLine($"[{message.Discussion.Name}]{message.Sender.Nickname}:{message.Content}");
                 };
             // 消息回显
@@ -66,7 +71,8 @@ namespace DumbQQConsoleDemo
         private static void QrLogin()
         {
             while (true)
-                switch (Client.Start(path => Process.Start(path)))
+            {
+                switch (Client.Start(Program.QrCodeDownloadedCallback))
                 {
                     case DumbQQClient.LoginResult.Succeeded:
                         return;
@@ -75,11 +81,34 @@ namespace DumbQQConsoleDemo
                     default:
                         Console.WriteLine("登录失败，需要重试吗？(y/n)");
                         var response = Console.ReadLine();
-                        if (response.IsMatch(@"^\s*y(es)?\s*$", RegexOptions.IgnoreCase))
+                        if (Regex.IsMatch(@"^\s*y(es)?\s*$", response, RegexOptions.IgnoreCase))
                             continue;
                         Environment.Exit(1);
                         return;
                 }
+            }
+        }
+
+        private static void QrCodeDownloadedCallback(byte[] qrCodeData)
+        {
+            Image qrCodeImage;
+            using (MemoryStream ms = new MemoryStream(qrCodeData))
+                qrCodeImage = Image.FromStream(ms);
+
+            string fileName = $"__qrct{DateTime.Now.ToString("yyyyMMHHmmss")}.png";
+            qrCodeImage.Save(fileName);
+            File.SetAttributes(fileName, File.GetAttributes(fileName) | FileAttributes.ReadOnly | FileAttributes.Hidden);
+
+            Process process = new Process()
+            {
+                StartInfo = new ProcessStartInfo(fileName)
+            };
+            process.Start();
+            process.WaitForExit(15000);
+            process.Close();
+
+            File.SetAttributes(fileName, File.GetAttributes(fileName) & ~(FileAttributes.ReadOnly | FileAttributes.Hidden));
+            File.Delete(fileName);
         }
     }
 }

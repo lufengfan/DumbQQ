@@ -2,10 +2,8 @@
 using System.Linq;
 using System.Net;
 using System.Web;
-using EasyHttp.Http;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using HttpResponse = EasyHttp.Http.HttpResponse;
 
 namespace DumbQQ.Constants
 {
@@ -15,7 +13,7 @@ namespace DumbQQ.Constants
             "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:51.0) Gecko/20100101 Firefox/51.0";
 
         public static readonly ApiUrl GetQrCode = new ApiUrl(
-            "https://ssl.ptlogin2.qq.com/ptqrshow?appid=501004106&e=0&l=M&s=5&d=72&v=4&t=0.1",
+            "https://ssl.ptlogin2.qq.com/ptqrshow?appid=501004106&e=0&l=M&s=5&d=72&v=4&t=0.20737422284902096",
             ""
         );
 
@@ -145,7 +143,7 @@ namespace DumbQQ.Constants
         /// <param name="url">URL。</param>
         /// <param name="args">附加的参数。</param>
         /// <returns></returns>
-        public static HttpResponse Get(this HttpClient client, ApiUrl url, params object[] args)
+        public static HttpWebResponse Get(this HttpClient client, ApiUrl url, params object[] args)
             => client.Get(url, null, args);
 
         /// <summary>
@@ -156,19 +154,19 @@ namespace DumbQQ.Constants
         /// <param name="allowAutoRedirect">允许自动重定向。</param>
         /// <param name="args">附加的参数。</param>
         /// <returns></returns>
-        public static HttpResponse Get(this HttpClient client, ApiUrl url, bool? allowAutoRedirect, params object[] args)
+        public static HttpWebResponse Get(this HttpClient client, ApiUrl url, bool? allowAutoRedirect, params object[] args)
         {
-            var referer = client.Request.Referer;
-            var autoRedirect = client.Request.AllowAutoRedirect;
+            var referer = client.Referer;
+            var autoRedirect = client.AllowAutoRedirect;
 
-            client.Request.Referer = url.Referer;
+            client.Referer = url.Referer;
             if (allowAutoRedirect.HasValue)
-                client.Request.AllowAutoRedirect = allowAutoRedirect.Value;
+                client.AllowAutoRedirect = allowAutoRedirect.Value;
             var response = client.Get(url.BuildUrl(args));
 
             // 复原client
-            client.Request.Referer = referer;
-            client.Request.AllowAutoRedirect = autoRedirect;
+            client.Referer = referer;
+            client.AllowAutoRedirect = autoRedirect;
 
             return response;
         }
@@ -180,7 +178,7 @@ namespace DumbQQ.Constants
         /// <param name="url">URL。</param>
         /// <param name="json">JSON。</param>
         /// <returns></returns>
-        public static HttpResponse Post(this HttpClient client, ApiUrl url, JObject json) => client.Post(url, json, -1);
+        public static HttpWebResponse Post(this HttpClient client, ApiUrl url, JObject json) => client.Post(url, json, System.Threading.Timeout.Infinite);
 
         /// <summary>
         ///     发送POST请求。
@@ -190,17 +188,17 @@ namespace DumbQQ.Constants
         /// <param name="json">JSON。</param>
         /// <param name="timeout">超时。</param>
         /// <returns></returns>
-        internal static HttpResponse Post(this HttpClient client, ApiUrl url, JObject json, int timeout)
+        internal static HttpWebResponse Post(this HttpClient client, ApiUrl url, JObject json, int timeout)
         {
             object origin;
-            var hasOrigin = client.Request.RawHeaders.TryGetValue("Origin", out origin);
+            var hasOrigin = ((HttpWebRequestProxy)client.Request).RawHeaders.TryGetValue("Origin", out origin);
             var time = client.Request.Timeout;
 
             client.Request.Referer = url.Referer;
-            if (client.Request.RawHeaders.ContainsKey("Origin"))
-                client.Request.RawHeaders["Origin"] = url.Origin;
+            if (((HttpWebRequestProxy)client.Request).RawHeaders.ContainsKey("Origin"))
+                ((HttpWebRequestProxy)client.Request).RawHeaders["Origin"] = url.Origin;
             else
-                client.Request.AddExtraHeader("Origin", url.Origin);
+                ((HttpWebRequestProxy)client.Request).AddExtraHeader("Origin", url.Origin);
             if (timeout > 0)
                 client.Request.Timeout = timeout;
 
@@ -209,9 +207,9 @@ namespace DumbQQ.Constants
 
             // 复原client
             if (hasOrigin)
-                client.Request.RawHeaders["Origin"] = origin;
+                ((HttpWebRequestProxy)client.Request).RawHeaders["Origin"] = origin;
             else
-                client.Request.RawHeaders.Remove("Origin");
+                ((HttpWebRequestProxy)client.Request).RawHeaders.Remove("Origin");
             client.Request.Timeout = time;
 
             return response;
@@ -225,9 +223,9 @@ namespace DumbQQ.Constants
         /// <param name="json">JSON。</param>
         /// <param name="retryTimes">重试次数。</param>
         /// <returns></returns>
-        internal static HttpResponse PostWithRetry(this HttpClient client, ApiUrl url, JObject json, int retryTimes)
+        internal static HttpWebResponse PostWithRetry(this HttpClient client, ApiUrl url, JObject json, int retryTimes)
         {
-            HttpResponse response;
+            HttpWebResponse response;
             do
             {
                 response = client.Post(url, json);
