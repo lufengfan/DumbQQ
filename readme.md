@@ -1,4 +1,4 @@
-本项目 Fork [@TJYSunset](https://github.com/scienjus/)的[DumbSmartQQ](https://github.com/TJYSunset/DumbQQ) 。
+本项目 Fork 自 [@TJYSunset](https://github.com/TJYSunset/) 的 [DumbSmartQQ](https://github.com/TJYSunset/DumbQQ) 。
 
 1. 降低 .Net Framework 依赖至3.5。
 2. 移除 EasyHttp 及其依赖项 JsonFx 的引用。
